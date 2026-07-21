@@ -1,4 +1,4 @@
-# insightforge_ai
+
 <div align="center">
 
 # 🔬 InsightForge AI
