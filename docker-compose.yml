@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  insightforge-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: insightforge_ai_web
+    ports:
+      - "8501:8501"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    restart: unless-stopped

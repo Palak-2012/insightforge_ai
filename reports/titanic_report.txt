@@ -1,0 +1,24 @@
+============================================================
+InsightForge AI — Automated Business Report
+============================================================
+
+1. DATASET OVERVIEW
+Domain: General Business Data
+Rows: 891 | Cols: 12
+
+2. DATA CLEANING
+Duplicates: 0
+Nulls Filled: 866
+
+3. INSIGHTS & RECOMMENDATIONS
+## 1. Executive Summary
+Automated rule-based summary: The dataset was processed, missing values were imputed, and descriptive statistics were compiled successfully.
+
+## 2. Key Findings & Trends
+- Statistical distributions and categorical proportions have been profiled.
+- Pairwise correlations and outlier bounds have been computed.
+
+## 3. Strategic Business Recommendations
+- Review the generated EDA charts to inspect distributions and outliers.
+- Provide a Gemini API key to activate AI-driven narrative synthesis.
+

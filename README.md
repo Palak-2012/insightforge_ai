@@ -210,38 +210,44 @@ class InsightForgeState(TypedDict):
 ```
 insightforge-ai/
 │
-├── 📓 main_pipeline.ipynb          ← Entry point — runs all agents in sequence
-├── 📓 01_data_loader.ipynb         ← CSV/Excel upload and validation
-├── 📓 02_eda.ipynb                 ← Exploratory data analysis functions
-├── 📓 03_charts.ipynb              ← Plotly visualization generation
-├── 📓 04_insights.ipynb            ← Gemini API calls and Q&A
-├── 📓 05_report.ipynb              ← PDF report generation
+├── 🌐 app.py                       ← Streamlit Interactive Web Application
+├── 🚀 run_pipeline.py              ← CLI Multi-Agent Pipeline Runner
+├── 🐳 Dockerfile                   ← Containerization Dockerfile
+├── 🐙 docker-compose.yml           ← Multi-container orchestration
 │
-├── agents/
-│   ├── 📓 00_agent_setup.ipynb     ← LangGraph setup and state definition
-│   ├── 📓 schema_agent.ipynb       ← Agent 1: Schema detection
-│   ├── 📓 cleaning_agent.ipynb     ← Agent 2: Data cleaning
-│   ├── 📓 eda_agent.ipynb          ← Agent 3: Statistical analysis
-│   ├── 📓 viz_agent.ipynb          ← Agent 4: Chart generation
-│   ├── 📓 insight_agent.ipynb      ← Agent 5: Gemini AI insights
-│   ├── 📓 report_agent.ipynb       ← Agent 6: PDF report
-│   └── 📓 supervisor.ipynb         ← Agent 7: LangGraph pipeline
+├── 📁 src/insightforge/            ← Core Python package
+│   ├── state.py                    ← Typed state schema (InsightForgeState)
+│   ├── loader.py                   ← Data ingestion & validation
+│   ├── logger.py                   ← Structured pipeline logger
+│   ├── 📁 agents/                  ← 7 LangGraph agent implementations
+│   │   ├── schema.py               ← Agent 1: Schema detection
+│   │   ├── cleaner.py              ← Agent 2: Automated data cleaning
+│   │   ├── eda.py                  ← Agent 3: Statistical analysis
+│   │   ├── viz.py                  ← Agent 4: Plotly visualizations
+│   │   ├── insights.py             ← Agent 5: Gemini AI insights & chat
+│   │   ├── reporter.py             ← Agent 6: Executive PDF report
+│   │   └── supervisor.py           ← Agent 7: LangGraph StateGraph pipeline
+│   └── 📁 advanced/                ← Advanced feature modules
+│       ├── data_dictionary.py      ← AI column profiling
+│       ├── anomaly_detection.py    ← IQR outlier detection
+│       ├── forecasting.py          ← Time-series trend forecasting
+│       └── automl.py               ← Baseline ML training & feature importances
 │
-├── research/
-│   ├── 📓 experiment_design.ipynb  ← Research methodology
-│   ├── 📓 single_agent_baseline.ipynb ← System A: Single LLM call
-│   ├── 📓 run_experiments.ipynb    ← Run both systems on 5 datasets
-│   └── 📓 research_paper.ipynb     ← Full research paper in markdown
+├── 📁 data/                        ← Benchmark datasets (Titanic, Iris, Sales)
+├── 📁 tests/                       ← 14 Pytest automated test suites
+├── 📁 .github/workflows/           ← GitHub Actions CI/CD pipeline (ci.yml)
 │
-├── advanced/
-│   ├── 📓 data_dictionary.ipynb    ← AI column descriptions
-│   ├── 📓 anomaly_detection.ipynb  ← IQR-based outlier detection
-│   ├── 📓 forecasting.ipynb        ← Basic trend forecasting
-│   └── 📓 mlflow_tracking.ipynb    ← Experiment logging
+├── 📁 agents/                      ← Jupyter Notebook agent workflows
+├── 📁 research/                    ← Benchmark experiment notebooks & paper
+├── 📁 advanced/                    ← Advanced feature notebooks
+├── 📓 main_pipeline.ipynb          ← End-to-end Databricks notebook runner
 │
-├── Phase0_Research.md              ← Problem Statement, Objectives, Scope
-├── README.md                       ← This file
-└── LICENSE                         ← MIT License
+├── 📄 requirements.txt             ← Pinned dependencies
+├── ⚙️ pyproject.toml               ← Build system & package config
+├── 🔐 .env.example                 ← Environment configuration template
+├── 📋 Phase0_Research.md           ← Problem Statement & Architecture Spec
+├── 📖 README.md                    ← Project documentation
+└── ⚖️ LICENSE                      ← MIT License
 ```
 
 ---
@@ -255,7 +261,7 @@ insightforge-ai/
 
 ### Step 1 — Clone this repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/insightforge-ai.git
+git clone https://github.com/Palak-2012/insightforge_ai.git
 ```
 
 ### Step 2 — Import notebooks to Databricks
@@ -293,45 +299,43 @@ Open `main_pipeline.ipynb` → click **Run All** → watch all 7 agents execute 
 
 ---
 
-## 📖 How to Use
+### 🐳 Run with Docker (Recommended)
+Launch the interactive web application with a single command:
+```bash
+docker-compose up --build
+```
+Open **http://localhost:8501** in your browser.
 
-### Run the full pipeline
+### 🌐 Run Local Web App (Streamlit)
+```bash
+streamlit run app.py
+```
+
+### 🚀 Run via CLI Runner
+```bash
+python run_pipeline.py --data data/titanic.csv --output reports/titanic_report.pdf --anomalies
+```
+
+### 🧪 Run Automated Tests
+```bash
+python -m pytest tests/ -v
+```
+
+### 📓 Run in Databricks Notebooks
 ```python
-# In main_pipeline.ipynb
-initial_state = {
-    "raw_df"         : df,        # your loaded DataFrame
-    "cleaned_df"     : None,
-    "schema_info"    : {},
-    "cleaning_report": {},
-    "eda_results"    : {},
-    "charts"         : [],
-    "insights"       : "",
-    "pdf_path"       : "",
-    "errors"         : []
-}
+from insightforge.agents.supervisor import run_pipeline
 
-final_state = supervisor.invoke(initial_state)
+final_state = run_pipeline(
+    data_source="/Volumes/insight/default/titanic/Titanic.csv",
+    gemini_key=dbutils.widgets.get("gemini_key"),
+    output_pdf="/tmp/insightforge_report.pdf"
+)
 
 print("✅ Pipeline complete!")
 print("📊 Charts generated:", len(final_state["charts"]))
 print("🤖 Insights preview:", final_state["insights"][:300])
 print("📄 PDF saved at:", final_state["pdf_path"])
 ```
-
-### Ask questions about your data
-```python
-answer = answer_question(df, "Which passenger class had the highest survival rate?")
-print(answer)
-```
-
-### Generate a data dictionary
-```python
-dd = generate_data_dictionary(df)
-dd.display()   # shows AI-described meaning of each column
-```
-
-### View experiment results in MLflow
-Go to **Experiments** in the Databricks left sidebar → open `InsightForge_Experiments` → compare runs across datasets.
 
 ---
 
@@ -428,10 +432,10 @@ fpdf2 writes to local filesystem paths; DBFS uses `/dbfs/` prefix. Solved by wri
 
 ## 🙋 Author
 
-**[Your Name]**
+**Palak Parihar**
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/YOUR_PROFILE)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github)](https://github.com/YOUR_USERNAME)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/palakparihar)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github)](https://github.com/Palak-2012)
 
 > Built as a 12-week end-to-end project to learn Agentic AI, Databricks, and LangGraph from scratch.
 > Open to data science, ML engineering, and AI roles.
