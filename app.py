@@ -303,6 +303,14 @@ with tab_chat:
     st.subheader("💬 Multi-Turn Conversational Data Assistant")
     st.caption("Ask natural language questions about patterns, trends, or specific metrics.")
 
+    col_chat_hdr, col_chat_clr = st.columns([4, 1])
+    with col_chat_clr:
+        if st.button("🧹 Clear Chat", use_container_width=True):
+            st.session_state.chat_messages = []
+            if st.session_state.chat_session:
+                st.session_state.chat_session.reset()
+            st.rerun()
+
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
@@ -314,11 +322,21 @@ with tab_chat:
             st.write(user_query)
 
         with st.chat_message("assistant"):
-            if st.session_state.chat_session:
-                ans = st.session_state.chat_session.ask(user_query)
-            else:
-                chat = ChatSession(df=current_df, gemini_key=gemini_key_input)
-                ans = chat.ask(user_query)
+            try:
+                chat = ChatSession(
+                    df=current_df,
+                    schema_info=state.get("schema_info", {}),
+                    gemini_key=gemini_key_input
+                )
+                if st.session_state.chat_session and hasattr(st.session_state.chat_session, "history"):
+                    chat.history = st.session_state.chat_session.history
+                st.session_state.chat_session = chat
+
+                with st.spinner("Analyzing data..."):
+                    ans = chat.ask(user_query)
+            except Exception as e:
+                ans = f"Assistant: Unable to complete AI request ({str(e)}). Please verify your Gemini API key."
+
             st.write(ans)
             st.session_state.chat_messages.append({"role": "assistant", "content": ans})
 
