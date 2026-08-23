@@ -7,6 +7,8 @@ Generates column-level statistical profiling and semantic definitions using Gemi
 from typing import Any, Dict, Optional
 import pandas as pd
 
+from insightforge.llm import call_gemini
+
 
 def get_column_stats(df: pd.DataFrame, col: str) -> Dict[str, Any]:
     """Extracts profiling statistics for a single column."""
@@ -30,24 +32,14 @@ def generate_data_dictionary(df: pd.DataFrame, gemini_key: str = "") -> pd.DataF
     Generates a structured data dictionary DataFrame describing every column.
     """
     rows = []
-    model = None
-    if gemini_key:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-        except ImportError:
-            model = None
-
     for col in df.columns:
         stats = get_column_stats(df, col)
         description = f"Attribute '{col}' with {stats['unique_count']} unique values."
 
-        if model:
+        if gemini_key:
             try:
                 prompt = f"In one concise sentence, explain the business meaning of a column named '{col}' in a dataset where sample values are: {stats['sample_values']}."
-                resp = model.generate_content(prompt)
-                description = resp.text.strip()
+                description = call_gemini(prompt, gemini_key)
             except Exception:
                 pass
 

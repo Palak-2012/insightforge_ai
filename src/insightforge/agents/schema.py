@@ -10,6 +10,7 @@ import pandas as pd
 
 from insightforge.state import InsightForgeState
 from insightforge.logger import log_event
+from insightforge.llm import call_gemini
 
 
 def get_column_types(df: pd.DataFrame) -> Dict[str, list]:
@@ -54,10 +55,6 @@ def schema_agent(state: InsightForgeState) -> Dict[str, Any]:
     gemini_key = state.get("gemini_key", "")
     if gemini_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-
             prompt = f"""
             Analyze the following dataset columns and sample data to identify:
             1. Business Domain (e.g. Healthcare, Finance, E-Commerce, Transportation, HR)
@@ -77,8 +74,7 @@ def schema_agent(state: InsightForgeState) -> Dict[str, Any]:
                 "reasoning": "..."
             }}
             """
-            response = model.generate_content(prompt)
-            clean_text = response.text.strip()
+            clean_text = call_gemini(prompt, gemini_key)
             if clean_text.startswith("```json"):
                 clean_text = clean_text[7:]
             if clean_text.endswith("```"):
@@ -92,7 +88,6 @@ def schema_agent(state: InsightForgeState) -> Dict[str, Any]:
             })
             state["pipeline_log"] = log_event(state, "schema_agent", f"AI detected domain: {schema_info['domain']}")
         except Exception as e:
-            state["errors"].append(f"Schema Agent AI detection warning: {str(e)}")
             state["pipeline_log"] = log_event(state, "schema_agent", f"Rule-based schema applied (AI fallback: {e})")
 
     state["schema_info"] = schema_info

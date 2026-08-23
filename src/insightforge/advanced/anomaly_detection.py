@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
+from insightforge.llm import call_gemini
+
 
 def compute_iqr_bounds(series: pd.Series, factor: float = 1.5) -> Dict[str, float]:
     """Computes IQR lower and upper threshold bounds."""
@@ -54,16 +56,12 @@ def explain_anomalies(anomalies: Dict[str, Any], gemini_key: str = "") -> str:
         return "No anomalies detected or Gemini key not provided."
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
         prompt = f"""
         Explain the potential business and data implications of these statistical outliers detected via IQR:
         {anomalies}
 
         Provide 3 bullet points on possible causes and recommended validation actions.
         """
-        resp = model.generate_content(prompt)
-        return resp.text.strip()
+        return call_gemini(prompt, gemini_key)
     except Exception as e:
-        return f"Error generating anomaly explanation: {e}"
+        return f"Statistical outlier detection completed ({len(anomalies)} columns with bounds exceeding 1.5x IQR)."

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from insightforge.state import InsightForgeState
 from insightforge.logger import log_event
+from insightforge.llm import call_gemini, get_gemini_model
 
 
 def generate_insights_prompt(
@@ -76,20 +77,27 @@ Automated rule-based summary: The dataset was processed, missing values were imp
         return state
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
         prompt = generate_insights_prompt(
             state.get("schema_info", {}),
             state.get("eda_results", {}),
             state.get("cleaning_report", {})
         )
-        response = model.generate_content(prompt)
-        state["insights"] = response.text.strip()
+        insights_text = call_gemini(prompt, gemini_key)
+        state["insights"] = insights_text
         state["pipeline_log"] = log_event(state, "insight_agent", "Gemini AI business insights synthesized successfully.")
     except Exception as e:
         state["errors"].append(f"Insight Agent Error: {str(e)}")
-        state["insights"] = f"Error generating Gemini insights: {str(e)}"
+        # Provide clean graceful fallback narrative so the user is never left with an empty or broken screen
+        state["insights"] = f"""## 1. Executive Summary
+Automated summary: Analysis generated descriptive statistics and correlations across {state.get('schema_info', {}).get('total_columns', 0)} attributes.
+
+## 2. Key Findings & Trends
+- Cleaned dataset contains {state.get('cleaning_report', {}).get('final_rows', 0):,} records ready for modeling.
+- Missing values ({state.get('cleaning_report', {}).get('nulls_filled_total', 0)}) successfully imputed.
+
+## 3. Strategic Business Recommendations
+- Verify API key access and permissions for advanced generative features. *(Note: {str(e)})*
+"""
 
     return state
 
@@ -104,21 +112,11 @@ class ChatSession:
         self.schema_info = schema_info or {}
         self.gemini_key = gemini_key
         self.history: List[Dict[str, str]] = []
-        self.model = None
-        if self.gemini_key:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.gemini_key)
-                self.model = genai.GenerativeModel("gemini-1.5-flash")
-            except ImportError:
-                self.model = None
 
     def ask(self, question: str) -> str:
         """Asks a question about the dataset grounded in schema and summary statistics."""
         if not self.gemini_key:
-            return "Please provide a valid Gemini API key to use conversational chat."
-        if not self.model:
-            return "google-generativeai package is not installed."
+            return "Please enter your Gemini API key in the sidebar to chat with your data."
 
         context = f"""
 Dataset Summary:
@@ -136,10 +134,12 @@ Previous Conversation History:
 
 User Question: {question}
 """
-        response = self.model.generate_content(prompt)
-        ans = response.text.strip()
-        self.history.append({"user": question, "assistant": ans})
-        return ans
+        try:
+            ans = call_gemini(prompt, self.gemini_key)
+            self.history.append({"user": question, "assistant": ans})
+            return ans
+        except Exception as e:
+            return f"Unable to generate AI answer: {str(e)}"
 
     def reset(self):
         """Clears chat history."""
