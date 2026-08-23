@@ -1,0 +1,16 @@
+============================================================
+InsightForge AI — Automated Business Report
+============================================================
+
+1. DATASET OVERVIEW
+Domain: Testing
+Rows: None | Cols: None
+
+2. DATA CLEANING
+Duplicates: None
+Nulls Filled: None
+
+3. INSIGHTS & RECOMMENDATIONS
+### Key Findings 🚀
+- Trend 1: High growth (50%)
+— Long dash and bullet •

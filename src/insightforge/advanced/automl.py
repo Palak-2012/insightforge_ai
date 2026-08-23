@@ -57,7 +57,7 @@ def train_baseline_model(
     X_raw = X_raw[cols_to_keep]
 
     # Encode categorical features
-    X = pd.get_dummies(X_raw, drop_first=True)
+    X = pd.get_dummies(X_raw, drop_first=True, dtype=float)
     if X.empty:
         return {"error": "No valid predictive features remaining after preprocessing."}
 

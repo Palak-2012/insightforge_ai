@@ -346,8 +346,10 @@ with tab_automl:
     st.subheader("🧠 Automated Baseline Machine Learning")
     st.caption("Train a baseline model on any selected target column.")
 
-    target_candidate = state.get("schema_info", {}).get("target_variable") or current_df.columns[-1]
-    selected_target = st.selectbox("Select Target Variable (Y)", current_df.columns, index=current_df.columns.get_loc(target_candidate) if target_candidate in current_df.columns else 0)
+    cols_list = list(current_df.columns)
+    target_candidate = state.get("schema_info", {}).get("target_variable") or cols_list[-1]
+    default_idx = cols_list.index(target_candidate) if target_candidate in cols_list else 0
+    selected_target = st.selectbox("Select Target Variable (Y)", cols_list, index=default_idx)
 
     if st.button("🚀 Train Baseline Random Forest"):
         with st.spinner("Training baseline model..."):
