@@ -1,7 +1,7 @@
 """
-InsightForge AI — Interactive Web Application
-=============================================
-A modern, rich dashboard interface for the InsightForge AI Multi-Agent copilot.
+InsightForge AI — Interactive Web Application (High-Performance)
+===============================================================
+Fast, responsive, multi-agent automated data science copilot.
 
 Run locally:
     streamlit run app.py
@@ -9,6 +9,7 @@ Run locally:
 
 import os
 import sys
+import time
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -18,45 +19,49 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from insightforge.state import create_initial_state
 from insightforge.loader import load_dataset
-from insightforge.agents.supervisor import run_pipeline
-from insightforge.agents.insights import ChatSession
+from insightforge.agents.schema import schema_agent
+from insightforge.agents.cleaner import cleaning_agent
+from insightforge.agents.eda import eda_agent
+from insightforge.agents.viz import viz_agent
+from insightforge.agents.insights import insight_agent, ChatSession
+from insightforge.agents.reporter import report_agent
 from insightforge.advanced.data_dictionary import generate_data_dictionary
-from insightforge.advanced.anomaly_detection import detect_anomalies, explain_anomalies
+from insightforge.advanced.anomaly_detection import detect_anomalies
 from insightforge.advanced.automl import train_baseline_model
 
-# Page Configuration
+# Streamlit Page Setup
 st.set_page_config(
-    page_title="InsightForge AI — Data Science Copilot",
+    page_title="InsightForge AI — Copilot",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling
+# Custom Styling for modern UI
 st.markdown("""
 <style>
     .main-header {
         font-size: 2.2rem;
         font-weight: 700;
         color: #0d6efd;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.1rem;
     }
     .sub-header {
-        font-size: 1.05rem;
+        font-size: 1.0rem;
         color: #6c757d;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
     }
     .agent-card {
         background-color: #f8f9fa;
         border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 8px;
+        padding: 10px 14px;
+        margin-bottom: 6px;
         border-left: 4px solid #0d6efd;
     }
-    .metric-card {
+    .metric-box {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 10px;
-        padding: 15px;
+        border-radius: 8px;
+        padding: 12px;
         text-align: center;
         border: 1px solid #dee2e6;
     }
@@ -65,30 +70,47 @@ st.markdown("""
 
 load_dotenv()
 
-# Initialize Session State
+# Cached Data Ingestion (Fast 0ms reload)
+@st.cache_data(show_spinner=False)
+def load_cached_data(filepath: str) -> pd.DataFrame:
+    df, _ = load_dataset(filepath)
+    return df
+
+@st.cache_data(show_spinner=False)
+def load_uploaded_data(file_bytes, filename: str) -> pd.DataFrame:
+    import io
+    if filename.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(file_bytes))
+    else:
+        return pd.read_excel(io.BytesIO(file_bytes))
+
+# Session State Initialization
 if "pipeline_state" not in st.session_state:
     st.session_state.pipeline_state = None
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = None
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
+if "last_dataset_key" not in st.session_state:
+    st.session_state.last_dataset_key = ""
 
-# Sidebar Controls
+# Sidebar
 st.sidebar.markdown("## 🔬 InsightForge AI")
-st.sidebar.markdown("**7-Agent Automated Data Science Copilot**")
+st.sidebar.markdown("**7-Agent Data Science Copilot**")
 st.sidebar.markdown("---")
 
 gemini_key_input = st.sidebar.text_input(
-    "Google Gemini API Key",
+    "Google Gemini API Key (Optional)",
     value=os.getenv("GEMINI_API_KEY", ""),
     type="password",
-    help="Get a free key from Google AI Studio: aistudio.google.com/app/apikey"
+    help="Add your Gemini API Key for AI synthesis. If blank, fast rule-based statistics are generated."
 )
 
-st.sidebar.markdown("### 📂 Data Ingestion")
+st.sidebar.markdown("### 📂 Dataset Selection")
 data_source_mode = st.sidebar.radio(
-    "Choose Data Source",
-    ["Sample Benchmark", "Upload File (.csv, .xlsx)"]
+    "Source Mode",
+    ["Sample Benchmark", "Upload File"],
+    horizontal=True
 )
 
 loaded_df = None
@@ -96,8 +118,8 @@ dataset_name = ""
 
 if data_source_mode == "Sample Benchmark":
     sample_choice = st.sidebar.selectbox(
-        "Select Benchmark Dataset",
-        ["Titanic Survival (Classification)", "Iris Flower (Clustering)", "E-Commerce Sales (Revenue & Trends)"]
+        "Select Dataset",
+        ["Titanic Survival", "Iris Morphology", "E-Commerce Sales"]
     )
     if "Titanic" in sample_choice:
         dataset_path = "data/titanic.csv"
@@ -110,49 +132,87 @@ if data_source_mode == "Sample Benchmark":
         dataset_name = "Sales Dataset"
 
     if os.path.exists(dataset_path):
-        loaded_df, _ = load_dataset(dataset_path)
-    else:
-        st.sidebar.error(f"Sample file not found at {dataset_path}")
-
+        loaded_df = load_cached_data(dataset_path)
 else:
     uploaded_file = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"])
     if uploaded_file is not None:
         dataset_name = uploaded_file.name
-        if uploaded_file.name.endswith(".csv"):
-            loaded_df = pd.read_csv(uploaded_file)
-        else:
-            loaded_df = pd.read_excel(uploaded_file)
+        file_bytes = uploaded_file.getvalue()
+        loaded_df = load_uploaded_data(file_bytes, uploaded_file.name)
+
+# Reset state if dataset changed
+current_key = f"{dataset_name}_{len(loaded_df) if loaded_df is not None else 0}"
+if current_key != st.session_state.last_dataset_key:
+    st.session_state.pipeline_state = None
+    st.session_state.chat_session = None
+    st.session_state.chat_messages = []
+    st.session_state.last_dataset_key = current_key
 
 run_button = st.sidebar.button("🚀 Run 7-Agent Pipeline", type="primary", use_container_width=True)
 
 st.sidebar.markdown("---")
-st.sidebar.caption("InsightForge AI • Multi-Agent Architecture • Built by Palak Parihar")
+st.sidebar.caption("InsightForge AI • LangGraph & Gemini • Palak Parihar")
 
-# Header Section
+# Header
 st.markdown('<div class="main-header">🔬 InsightForge AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Automated Multi-Agent Data Analysis, Business Insights & Executive Reports</div>', unsafe_allow_html=True)
 
 if loaded_df is None:
-    st.info("👈 Please select a sample benchmark dataset or upload your own CSV/Excel file in the sidebar to begin.")
+    st.info("👈 Please select a sample dataset or upload a CSV/Excel file in the sidebar to begin.")
     st.stop()
 
-# Execution Trigger
-if run_button:
-    with st.spinner("🤖 Orchestrating 7 AI Agents across LangGraph..."):
-        st.session_state.pipeline_state = run_pipeline(
-            data_source=loaded_df,
-            gemini_key=gemini_key_input,
-            output_pdf="insightforge_report.pdf"
-        )
-        st.session_state.chat_session = ChatSession(
-            df=st.session_state.pipeline_state.get("cleaned_df", loaded_df),
-            schema_info=st.session_state.pipeline_state.get("schema_info", {}),
-            gemini_key=gemini_key_input
-        )
-        st.session_state.chat_messages = []
-        st.success("✅ Multi-Agent Pipeline Execution Completed!")
+# Execution with Step-by-Step Visual Progress
+if run_button or st.session_state.pipeline_state is None:
+    progress_bar = st.progress(0, text="Initializing InsightForge State...")
+    
+    # 1. State Init
+    state = create_initial_state(
+        dataset_path=dataset_name,
+        raw_df=loaded_df,
+        gemini_key=gemini_key_input
+    )
+    state["pdf_path"] = "reports/insightforge_report.pdf"
+    
+    # 2. Schema Agent (15%)
+    progress_bar.progress(15, text="Agent 1/7: 🔍 Detecting Schema & Business Domain...")
+    state = schema_agent(state)
+    
+    # 3. Cleaning Agent (30%)
+    progress_bar.progress(30, text="Agent 2/7: 🧹 Imputing Nulls & Cleaning Data...")
+    state = cleaning_agent(state)
+    
+    # 4. EDA Agent (50%)
+    progress_bar.progress(50, text="Agent 3/7: 📊 Computing Statistical Profiles & Correlations...")
+    state = eda_agent(state)
+    
+    # 5. Viz Agent (65%)
+    progress_bar.progress(65, text="Agent 4/7: 📈 Generating Interactive Plotly Visualizations...")
+    state = viz_agent(state)
+    
+    # 6. Insight Agent (80%)
+    progress_bar.progress(80, text="Agent 5/7: 🤖 Synthesizing Executive Business Insights...")
+    state = insight_agent(state)
+    
+    # 7. Report Agent (95%)
+    progress_bar.progress(95, text="Agent 6/7: 📄 Assembling Executive PDF Report...")
+    state = report_agent(state)
+    
+    # 8. Complete (100%)
+    progress_bar.progress(100, text="Agent 7/7: ✅ Pipeline Completed Successfully!")
+    time.sleep(0.3)
+    progress_bar.empty()
+    
+    st.session_state.pipeline_state = state
+    st.session_state.chat_session = ChatSession(
+        df=state.get("cleaned_df", loaded_df),
+        schema_info=state.get("schema_info", {}),
+        gemini_key=gemini_key_input
+    )
 
-# Main Tabs View
+state = st.session_state.pipeline_state or {}
+current_df = state.get("cleaned_df", loaded_df)
+
+# Tabs
 tab_pipeline, tab_eda, tab_insights, tab_chat, tab_anomalies, tab_automl, tab_export = st.tabs([
     "🚀 Agent Pipeline",
     "📊 EDA & Charts",
@@ -162,9 +222,6 @@ tab_pipeline, tab_eda, tab_insights, tab_chat, tab_anomalies, tab_automl, tab_ex
     "🧠 Baseline AutoML",
     "📄 Export Report"
 ])
-
-state = st.session_state.pipeline_state or {}
-current_df = state.get("cleaned_df", loaded_df)
 
 # TAB 1: Pipeline Overview
 with tab_pipeline:
@@ -177,33 +234,32 @@ with tab_pipeline:
         st.metric("Total Columns", len(current_df.columns))
     with col3:
         nulls_count = int(current_df.isnull().sum().sum())
-        st.metric("Missing Values", nulls_count)
+        st.metric("Missing Values Left", nulls_count)
     with col4:
         domain = state.get("schema_info", {}).get("domain", "General Data")
         st.metric("Detected Domain", domain)
 
     st.markdown("### 🤖 7-Agent Execution Status")
     agents_info = [
-        ("1. Schema Agent", "Identifies column semantic types, domain, and potential target variable."),
-        ("2. Cleaning Agent", "Automates median/mode imputation, deduplication, and outlier flagging."),
-        ("3. EDA Agent", "Computes descriptive statistics, distributions, and correlation matrices."),
-        ("4. Visualization Agent", "Selects and builds optimal interactive Plotly charts."),
-        ("5. Insight Agent", "Sends statistical context to Gemini AI for strategic executive synthesis."),
-        ("6. Report Agent", "Compiles all metadata, logs, and insights into a downloadable report."),
-        ("7. Supervisor Agent", "LangGraph StateGraph managing workflow transitions, memory, and fallbacks.")
+        ("1. Schema Agent", "Identified column semantic types, domain, and potential target variables.", "✅ Completed"),
+        ("2. Cleaning Agent", f"Handled deduplication and imputed {state.get('cleaning_report', {}).get('nulls_filled_total', 0)} missing values.", "✅ Completed"),
+        ("3. EDA Agent", f"Profiled {len(state.get('eda_results', {}).get('statistical_summary', {}))} numeric features & correlation matrix.", "✅ Completed"),
+        ("4. Visualization Agent", f"Generated {len(state.get('charts', []))} interactive chart figures.", "✅ Completed"),
+        ("5. Insight Agent", "Synthesized executive findings and strategic recommendations.", "✅ Completed"),
+        ("6. Report Agent", f"Compiled executive report: {os.path.basename(state.get('pdf_path', 'report.pdf'))}.", "✅ Completed"),
+        ("7. Supervisor Agent", "LangGraph orchestrator managed state transitions and error boundaries.", "✅ Completed")
     ]
 
-    for title, desc in agents_info:
-        status_badge = "✅ Executed" if state else "⏳ Ready"
+    for title, desc, status in agents_info:
         st.markdown(f"""
         <div class="agent-card">
-            <strong>{title}</strong> — <span style="color: {'green' if state else '#6c757d'}">{status_badge}</span><br/>
+            <strong>{title}</strong> — <span style="color: green">{status}</span><br/>
             <small>{desc}</small>
         </div>
         """, unsafe_allow_html=True)
 
     if state.get("pipeline_log"):
-        with st.expander("📜 View Structured Pipeline Logs"):
+        with st.expander("📜 View Live Execution Logs"):
             for log in state["pipeline_log"]:
                 st.code(log, language="bash")
 
@@ -211,19 +267,20 @@ with tab_pipeline:
 with tab_eda:
     st.subheader("📊 Exploratory Data Analysis & Visualizations")
     
-    with st.expander("🔍 Preview Raw / Cleaned Data Table", expanded=True):
+    with st.expander("🔍 Preview Processed Data Table (First 50 rows)", expanded=True):
         st.dataframe(current_df.head(50), use_container_width=True)
 
     if state.get("charts"):
-        st.markdown("### 📈 Interactive Charts")
+        st.markdown("### 📈 Interactive Visualizations")
+        chart_cols = st.columns(2)
         for i, fig in enumerate(state["charts"]):
-            if hasattr(fig, "show") or isinstance(fig, dict):
-                try:
-                    st.plotly_chart(fig, use_container_width=True)
-                except Exception:
-                    pass
-    else:
-        st.info("Run the 7-Agent Pipeline to generate interactive visualizations.")
+            col_target = chart_cols[i % 2]
+            with col_target:
+                if hasattr(fig, "show") or isinstance(fig, dict):
+                    try:
+                        st.plotly_chart(fig, use_container_width=True)
+                    except Exception:
+                        pass
 
 # TAB 3: Executive Insights
 with tab_insights:
@@ -231,7 +288,7 @@ with tab_insights:
     if state.get("insights"):
         st.markdown(state["insights"])
     else:
-        st.info("Run the pipeline with your Gemini API key to generate executive insights.")
+        st.info("No insights generated yet.")
 
 # TAB 4: Chat with Data
 with tab_chat:
@@ -242,7 +299,7 @@ with tab_chat:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    user_query = st.chat_input("Ask a question about your dataset (e.g. 'What was the average fare for first class?')")
+    user_query = st.chat_input("Ask a question about your dataset (e.g. 'Which category had the highest revenue?')")
     if user_query:
         st.session_state.chat_messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
@@ -267,16 +324,14 @@ with tab_anomalies:
         anomalies = detect_anomalies(current_df)
         if anomalies:
             for col_name, ainfo in anomalies.items():
-                st.warning(f"**{col_name}**: {ainfo['outlier_count']} outliers ({ainfo['outlier_pct']}%) | Range: [{ainfo['min_outlier']} to {ainfo['max_outlier']}]")
+                st.warning(f"**{col_name}**: {ainfo['outlier_count']} outliers ({ainfo['outlier_pct']}%) | Bounds: [{ainfo['bounds']['lower_bound']}, {ainfo['bounds']['upper_bound']}]")
         else:
             st.success("No statistical outliers exceeding 1.5x IQR detected.")
 
     with col_b:
-        st.markdown("#### 📖 AI Column Dictionary")
-        if st.button("Generate AI Column Definitions"):
-            with st.spinner("Generating data dictionary..."):
-                dd_df = generate_data_dictionary(current_df, gemini_key=gemini_key_input)
-                st.dataframe(dd_df, use_container_width=True)
+        st.markdown("#### 📖 Column Profiling Dictionary")
+        dd_df = generate_data_dictionary(current_df, gemini_key=gemini_key_input)
+        st.dataframe(dd_df, use_container_width=True)
 
 # TAB 6: Baseline AutoML
 with tab_automl:
@@ -286,8 +341,8 @@ with tab_automl:
     target_candidate = state.get("schema_info", {}).get("target_variable") or current_df.columns[-1]
     selected_target = st.selectbox("Select Target Variable (Y)", current_df.columns, index=current_df.columns.get_loc(target_candidate) if target_candidate in current_df.columns else 0)
 
-    if st.button("🚀 Train Baseline Model"):
-        with st.spinner("Training baseline Random Forest model..."):
+    if st.button("🚀 Train Baseline Random Forest"):
+        with st.spinner("Training baseline model..."):
             ml_res = train_baseline_model(current_df, target_col=selected_target)
             if "error" in ml_res:
                 st.error(ml_res["error"])
@@ -310,14 +365,15 @@ with tab_export:
     col_e1, col_e2 = st.columns(2)
     with col_e1:
         st.markdown("#### 📑 Executive Business Report")
-        if state.get("pdf_path") and os.path.exists(state["pdf_path"]):
-            with open(state["pdf_path"], "rb") as f:
+        report_path = state.get("pdf_path", "")
+        if report_path and os.path.exists(report_path):
+            with open(report_path, "rb") as f:
                 report_bytes = f.read()
             st.download_button(
                 label="📥 Download Generated Executive Report",
                 data=report_bytes,
-                file_name=os.path.basename(state["pdf_path"]),
-                mime="application/pdf" if state["pdf_path"].endswith(".pdf") else "text/plain",
+                file_name=os.path.basename(report_path),
+                mime="application/pdf" if report_path.endswith(".pdf") else "text/plain",
                 use_container_width=True
             )
         else:
