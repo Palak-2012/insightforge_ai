@@ -1,7 +1,7 @@
 """
-InsightForge AI — Interactive Web Application (High-Performance)
-===============================================================
-Fast, responsive, multi-agent automated data science copilot.
+InsightForge AI — Interactive Web Application
+=============================================
+A modern, rich dashboard interface for the InsightForge AI Multi-Agent copilot.
 
 Run locally:
     streamlit run app.py
@@ -14,8 +14,17 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-# Ensure src/ is on sys.path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+# Ensure root directory and src/ are correctly resolved on any cloud/local environment
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(ROOT_DIR, "src")
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+REPORTS_DIR = os.path.join(ROOT_DIR, "reports")
+
+os.makedirs(REPORTS_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 from insightforge.state import create_initial_state
 from insightforge.loader import load_dataset
@@ -31,13 +40,13 @@ from insightforge.advanced.automl import train_baseline_model
 
 # Streamlit Page Setup
 st.set_page_config(
-    page_title="InsightForge AI — Copilot",
+    page_title="InsightForge AI — Data Science Copilot",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for modern UI
+# Custom Styling
 st.markdown("""
 <style>
     .main-header {
@@ -58,26 +67,19 @@ st.markdown("""
         margin-bottom: 6px;
         border-left: 4px solid #0d6efd;
     }
-    .metric-box {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 8px;
-        padding: 12px;
-        text-align: center;
-        border: 1px solid #dee2e6;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 load_dotenv()
 
-# Cached Data Ingestion (Fast 0ms reload)
+# Cached Data Ingestion
 @st.cache_data(show_spinner=False)
-def load_cached_data(filepath: str) -> pd.DataFrame:
+def get_cached_dataset(filepath: str) -> pd.DataFrame:
     df, _ = load_dataset(filepath)
     return df
 
 @st.cache_data(show_spinner=False)
-def load_uploaded_data(file_bytes, filename: str) -> pd.DataFrame:
+def parse_uploaded_file(file_bytes, filename: str) -> pd.DataFrame:
     import io
     if filename.endswith(".csv"):
         return pd.read_csv(io.BytesIO(file_bytes))
@@ -96,17 +98,17 @@ if "last_dataset_key" not in st.session_state:
 
 # Sidebar
 st.sidebar.markdown("## 🔬 InsightForge AI")
-st.sidebar.markdown("**7-Agent Data Science Copilot**")
+st.sidebar.markdown("**7-Agent Automated Data Science Copilot**")
 st.sidebar.markdown("---")
 
 gemini_key_input = st.sidebar.text_input(
-    "Google Gemini API Key (Optional)",
+    "Google Gemini API Key",
     value=os.getenv("GEMINI_API_KEY", ""),
     type="password",
-    help="Add your Gemini API Key for AI synthesis. If blank, fast rule-based statistics are generated."
+    help="Get a free key at: aistudio.google.com/app/apikey"
 )
 
-st.sidebar.markdown("### 📂 Dataset Selection")
+st.sidebar.markdown("### 📂 Data Ingestion")
 data_source_mode = st.sidebar.radio(
     "Source Mode",
     ["Sample Benchmark", "Upload File"],
@@ -118,29 +120,31 @@ dataset_name = ""
 
 if data_source_mode == "Sample Benchmark":
     sample_choice = st.sidebar.selectbox(
-        "Select Dataset",
+        "Select Benchmark Dataset",
         ["Titanic Survival", "Iris Morphology", "E-Commerce Sales"]
     )
     if "Titanic" in sample_choice:
-        dataset_path = "data/titanic.csv"
+        dataset_path = os.path.join(DATA_DIR, "titanic.csv")
         dataset_name = "Titanic Dataset"
     elif "Iris" in sample_choice:
-        dataset_path = "data/iris.csv"
+        dataset_path = os.path.join(DATA_DIR, "iris.csv")
         dataset_name = "Iris Dataset"
     else:
-        dataset_path = "data/sales_sample.csv"
+        dataset_path = os.path.join(DATA_DIR, "sales_sample.csv")
         dataset_name = "Sales Dataset"
 
     if os.path.exists(dataset_path):
-        loaded_df = load_cached_data(dataset_path)
+        loaded_df = get_cached_dataset(dataset_path)
+    else:
+        st.sidebar.error(f"Dataset file not found at {dataset_path}")
 else:
     uploaded_file = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"])
     if uploaded_file is not None:
         dataset_name = uploaded_file.name
         file_bytes = uploaded_file.getvalue()
-        loaded_df = load_uploaded_data(file_bytes, uploaded_file.name)
+        loaded_df = parse_uploaded_file(file_bytes, uploaded_file.name)
 
-# Reset state if dataset changed
+# Reset pipeline if dataset changed
 current_key = f"{dataset_name}_{len(loaded_df) if loaded_df is not None else 0}"
 if current_key != st.session_state.last_dataset_key:
     st.session_state.pipeline_state = None
@@ -153,66 +157,70 @@ run_button = st.sidebar.button("🚀 Run 7-Agent Pipeline", type="primary", use_
 st.sidebar.markdown("---")
 st.sidebar.caption("InsightForge AI • LangGraph & Gemini • Palak Parihar")
 
-# Header
+# Main Header
 st.markdown('<div class="main-header">🔬 InsightForge AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Automated Multi-Agent Data Analysis, Business Insights & Executive Reports</div>', unsafe_allow_html=True)
 
 if loaded_df is None:
-    st.info("👈 Please select a sample dataset or upload a CSV/Excel file in the sidebar to begin.")
+    st.info("👈 Please select a sample dataset or upload your own CSV/Excel file in the sidebar to begin.")
     st.stop()
 
-# Execution with Step-by-Step Visual Progress
-if run_button or st.session_state.pipeline_state is None:
+# Execution Logic
+def execute_full_pipeline(df: pd.DataFrame, key: str) -> dict:
     progress_bar = st.progress(0, text="Initializing InsightForge State...")
     
-    # 1. State Init
     state = create_initial_state(
         dataset_path=dataset_name,
-        raw_df=loaded_df,
-        gemini_key=gemini_key_input
+        raw_df=df,
+        gemini_key=key
     )
-    state["pdf_path"] = "reports/insightforge_report.pdf"
+    state["pdf_path"] = os.path.join(REPORTS_DIR, "insightforge_report.pdf")
     
-    # 2. Schema Agent (15%)
     progress_bar.progress(15, text="Agent 1/7: 🔍 Detecting Schema & Business Domain...")
     state = schema_agent(state)
     
-    # 3. Cleaning Agent (30%)
     progress_bar.progress(30, text="Agent 2/7: 🧹 Imputing Nulls & Cleaning Data...")
     state = cleaning_agent(state)
     
-    # 4. EDA Agent (50%)
     progress_bar.progress(50, text="Agent 3/7: 📊 Computing Statistical Profiles & Correlations...")
     state = eda_agent(state)
     
-    # 5. Viz Agent (65%)
     progress_bar.progress(65, text="Agent 4/7: 📈 Generating Interactive Plotly Visualizations...")
     state = viz_agent(state)
     
-    # 6. Insight Agent (80%)
     progress_bar.progress(80, text="Agent 5/7: 🤖 Synthesizing Executive Business Insights...")
     state = insight_agent(state)
     
-    # 7. Report Agent (95%)
     progress_bar.progress(95, text="Agent 6/7: 📄 Assembling Executive PDF Report...")
     state = report_agent(state)
     
-    # 8. Complete (100%)
     progress_bar.progress(100, text="Agent 7/7: ✅ Pipeline Completed Successfully!")
     time.sleep(0.3)
     progress_bar.empty()
-    
-    st.session_state.pipeline_state = state
+    return state
+
+if run_button:
+    st.session_state.pipeline_state = execute_full_pipeline(loaded_df, gemini_key_input)
     st.session_state.chat_session = ChatSession(
-        df=state.get("cleaned_df", loaded_df),
-        schema_info=state.get("schema_info", {}),
+        df=st.session_state.pipeline_state.get("cleaned_df", loaded_df),
+        schema_info=st.session_state.pipeline_state.get("schema_info", {}),
+        gemini_key=gemini_key_input
+    )
+    st.success("✅ Multi-Agent Pipeline Execution Completed!")
+
+# If pipeline hasn't run yet, auto-run lightweight preview
+if st.session_state.pipeline_state is None:
+    st.session_state.pipeline_state = execute_full_pipeline(loaded_df, gemini_key_input)
+    st.session_state.chat_session = ChatSession(
+        df=st.session_state.pipeline_state.get("cleaned_df", loaded_df),
+        schema_info=st.session_state.pipeline_state.get("schema_info", {}),
         gemini_key=gemini_key_input
     )
 
 state = st.session_state.pipeline_state or {}
 current_df = state.get("cleaned_df", loaded_df)
 
-# Tabs
+# Main Tabs View
 tab_pipeline, tab_eda, tab_insights, tab_chat, tab_anomalies, tab_automl, tab_export = st.tabs([
     "🚀 Agent Pipeline",
     "📊 EDA & Charts",
